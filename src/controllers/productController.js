@@ -122,74 +122,60 @@ const getProductsByQuery = async function(req,res)
 {
     try
     {
-        const filterQuery = {isDeleted:false}
-
         const queryParams = req.query
+        //Extract params
+        let {size, name, priceGreaterThan, priceLessThan, priceSort} = queryParams
 
-        //VALIDATION START
-        if(isValidRequestBody(queryParams))
-        {
-            var {size, name, priceGreaterThan, priceLessThan, priceSort} = queryParams
+        const filterQuery = { isDeleted: false, ...req.query }
+        // validation start
+        if (size) {
+            if (!size) return res.status(400).send({ status: false, msg: "provide size" })
 
-            if(isValid(size)){
-                filterQuery['availableSizes'] = size
-            }
-
-            if(isValid(name)){
-                filterQuery['title'] = {}
-                filterQuery['title']['$regex'] = name
-                filterQuery['title']['$options'] = 'i'
-            }
-
-            //setting price for ranging the product's price to fetch them.
-            if(isValid(priceGreaterThan))
-            {
-                if (!(!isNaN(Number(priceGreaterThan)))) 
-                {                    
-                    return res.status(400).send({ status: false, message: `priceGreaterThan should be a valid number` })
-                }
-                if (priceGreaterThan <= 0) {
-                    return res.status(400).send({ status: false, message: `priceGreaterThan should be a valid number` })
-                }
-                if (!filterQuery.hasOwnProperty('price'))
-                    filterQuery['price'] = {}
-                    filterQuery['price']['$gte'] = Number(priceGreaterThan)
-                //console.log(typeof Number(priceGreaterThan))
-            }
-
-            //setting price for ranging the product's price to fetch them.
-            if(isValid(priceLessThan))
-            {
-                if (!(!isNaN(Number(priceLessThan)))) {
-                    return res.status(400).send({ status: false, message: `priceLessThan should be a valid number` })
-                }
-                if (priceLessThan <= 0) {
-                    return res.status(400).send({ status: false, message: `priceLessThan should be a valid number` })
-                }
-                if (!filterQuery.hasOwnProperty('price')){
-                    filterQuery['price'] = {}
-                    filterQuery['price']['$lte'] = Number(priceLessThan)
-                    // console.log(typeof Number(priceLessThan))
-                }    
-            }
-
-            //sorting the products acc. to prices => 1 for ascending & -1 for descending.
-            if (isValid(priceSort)) 
-            { 
-                if (!((priceSort == 1) || (priceSort == -1)))
-                {
-                    return res.status(400).send({ status: false, message: `priceSort should be 1 or -1 ` })
-                }
+            if (!isValid(size)){
+                if(["S", "XS", "M", "X", "L", "XXL", "XL"].includes(size) == false)
+                return res.status(400).send({ status: false, msg: `Size should be among ${["S", "XS", "M", "X", "L", "XXL", "XL"]}` })
             }  
-        }
+            filterQuery['availableSizes'] = size.toUpperCase()
+        };
 
-        let products = await productModel.find(filterQuery).sort({ price:priceSort })
+        if (priceGreaterThan) {
+            if (!(/^(0|[1-9][0-9]*)$/.test(priceGreaterThan)))
+                return res.status(400).send({ status: false, msg: "provide priceGreaterThan in numeric" })
+            filterQuery['price'] = { $gt: priceGreaterThan }
+        };
 
-        if(!isValidRequestBody(products)){
-            return res.status(400).send({status:false, message:'No product Found'})
-        }
+        if (priceLessThan) {
+            if (!(/^(0|[1-9][0-9]*)$/.test(priceLessThan)))
+                return res.status(400).send({ status: false, msg: "provide priceLessThan in numeric" })
+            filterQuery['price'] = { $lt: priceLessThan }
+        };
+       
+        if (isValid(name)) {
+        filterQuery['title'] = { $regex: name, $options: "i" };
+        };
 
-        res.status(200).send({status:true, message:'Find by query Documnents', data:products})
+        // validation of priceSort
+        if(priceSort){
+            if (!((priceSort == 1) || (priceSort == -1))){
+                return res.status(400).send({status : false, message : "Price sort only takes 1 or -1 as a value" })
+            }
+
+            let filterProduct = await productModel.find(filterQuery).sort({price: priceSort})
+    
+            if(filterProduct.length>0){
+                return res.status(200).send({status : false, message : "Success", data : filterProduct})
+            }
+            else{
+                return res.status(404).send({status : false, message : "No products found with this query"})
+            }
+        };
+        // validation end
+
+        const products = await productModel.find({ ...filterQuery }).sort({ price: 1 }) //rest operator
+
+        if (!(products.length)) return res.status(404).send({ status: false, msg: 'Product not found' })
+        return res.status(200).send({ status: true, msg: "Success", data: products })
+
 
     }
     catch(err)
